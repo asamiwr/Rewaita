@@ -1,0 +1,98 @@
+/* Window */
+@define-color window_bg_color #2c2c2c;        /* Yaru theme_base_color */
+@define-color window_fg_color #F7F7F7;       /* Yaru theme_fg_color */
+
+/* View styling */
+@define-color view_bg_color #242424;          /* theme_base_color */
+@define-color view_fg_color #F7F7F7;          /* theme_fg_color */
+
+/* Header bar */
+@define-color headerbar_bg_color #303030;    /* theme_bg_color */
+@define-color headerbar_backdrop_color #272727;
+@define-color headerbar_fg_color #F7F7F7;
+
+/* Popovers and dialogs */
+@define-color popover_bg_color #393939;
+@define-color popover_fg_color #F7F7F7;
+
+@define-color dialog_bg_color @popover_bg_color;
+@define-color dialog_fg_color @popover_fg_color;
+
+/* Cards and sidebars */
+@define-color card_bg_color #3d3d3d;         /* slightly darker */
+@define-color card_fg_color #F7F7F7;
+
+@define-color sidebar_bg_color #393939;
+@define-color sidebar_fg_color #F7F7F7;
+@define-color sidebar_backdrop_color #323232;
+@define-color sidebar_border_color #3c3c3c;
+
+@define-color secondary_sidebar_bg_color #3d3d3d;
+@define-color secondary_sidebar_fg_color @sidebar_fg_color;
+@define-color secondary_sidebar_backdrop_color @sidebar_backdrop_color;
+@define-color secondary_sidebar_border_color @sidebar_border_color;
+
+/* Accent colors from Yaru */
+@define-color blue_1 #19B6EE;
+@define-color blue_2 #007aa6;
+@define-color blue_3 #335280;
+@define-color blue_4 #19B6EE;
+@define-color blue_5 #19B6EE;
+
+@define-color green_1 #0e8420;
+@define-color green_2 #0e8420;
+@define-color green_3 #0e8420;
+@define-color green_4 #0e8420;
+@define-color green_5 #0e8420;
+
+@define-color yellow_1 #f99b11;
+@define-color yellow_2 #f99b11;
+@define-color yellow_3 #f99b11;
+@define-color yellow_4 #f99b11;
+@define-color yellow_5 #f99b11;
+
+@define-color orange_1 #E95420;
+@define-color orange_2 #E95420;
+@define-color orange_3 #E95420;
+@define-color orange_4 #E95420;
+@define-color orange_5 #E95420;
+
+@define-color red_1 #c7162b;
+@define-color red_2 #c7162b;
+@define-color red_3 #c7162b;
+@define-color red_4 #c7162b;
+@define-color red_5 #c7162b;
+
+@define-color purple_1 #762572;
+@define-color purple_2 #924D8B;
+@define-color purple_3 #77216F;
+@define-color purple_4 #5E2750;
+@define-color purple_5 #2C001E;
+
+/* Light/Dark variants */
+@define-color light_1 #F7F7F7;
+@define-color light_2 #CCCCCC;
+@define-color light_3 #AEA79F;
+@define-color light_4 #878787;
+@define-color light_5 #666666;
+
+@define-color dark_1 #181818;
+@define-color dark_2 #3d3d3d;
+@define-color dark_3 #272727;
+@define-color dark_4 #393939;
+@define-color dark_5 #3c3c3c;
+
+/* Components styling */
+toast {
+  background-color: @window_bg_color;
+  color: @window_fg_color;
+}
+
+toggle:checked {
+  background-color: @card_bg_color;
+  color: @window_fg_color;
+}
+
+.inline {
+  background-color: rgba(0, 0, 0, 0);
+}
