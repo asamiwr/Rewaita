@@ -1,6 +1,6 @@
 # utils.py
 #
-# Copyright 2025 Nathan Perlman
+# Copyright 2026 Nathan Perlman
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,23 +17,83 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import gi, os, shutil
+import gi, os, shutil, json
 from gi.repository import Gtk, Gdk, GLib, Xdp, Adw
-from .extra_options_box import sharp_corners_css
-from .image_modifier import hex_to_rgb, ciede2000
+from .image_modifier import hex_to_rgb, find_closest_color
+from .firefox_gnome_theme import FirefoxGnomeThemePlugin
 
 settings = Xdp.Portal().get_settings()
 css_provider = Gtk.CssProvider()
+firefox_theme_plugin = FirefoxGnomeThemePlugin()
+
+class Preferences:
+    DEFAULTS = {
+        "light-theme": "default",
+        "dark-theme": "default",
+        "window-controls": "default",
+        "modify-gtk3-theme": True,
+        "modify-gnome-shell": True,
+        "run-in-background": True,
+        "transparency": False,
+        "window": False,
+        "sharp": False,
+        "firefox-theme": False,
+        "light-text": False,
+    }
+
+    def __init__(self):
+        self.pref_dir = GLib.get_user_data_dir()
+        self.pref_file = os.path.join(self.pref_dir, "prefs.json")
+        self.make_file()
+
+    def make_file(self):
+        if(not os.path.exists(self.pref_file)):
+            self.save(self.DEFAULTS)
+
+    def get(self, key):
+        try:
+            with open(self.pref_file, "r") as f:
+                prefs = json.load(f)
+                return prefs.get(key, self.DEFAULTS.get(key))
+        except:
+            self.make_file()
+            return self.DEFAULTS.get(key)
+
+    def set(self, key, value):
+        try:
+            with open(self.pref_file, "r") as f:
+                prefs = json.load(f)
+        except:
+            prefs = dict(self.DEFAULTS)
+
+        prefs[key] = value
+        self.save(prefs)
+
+    def save(self, data):
+        os.makedirs(self.pref_dir, exist_ok=True)
+        with open(self.pref_file, "w") as f:
+            json.dump(data, f, indent=4)
+
+    def get_all(self):
+        try:
+            with open(self.pref_file, "r") as f:
+                return json.load(f)
+        except:
+            self.make_file()
+            return dict(self.DEFAULTS)
 
 def read_accent_color():
-    accent = settings.read_value("org.freedesktop.appearance", "accent-color")
-    converted = tuple(int(x * 255) for x in accent)
-    if(any(value < 0 for value in converted) or any(value > 255 for value in converted)):
+    try:
+        accent = settings.read_value("org.freedesktop.appearance", "accent-color")
+        converted = tuple(int(x * 255) for x in accent)
+        if(any(value < 0 for value in converted) or any(value > 255 for value in converted)):
+            converted = (53, 132, 228) # Default Gnome blue
+    except Exception:
         converted = (53, 132, 228) # Default Gnome blue
     return converted
 
 def get_accent_color(palette):
-    return ciede2000(read_accent_color(), palette)
+    return find_closest_color(read_accent_color(), palette)
 
 def add_css_provider(css, accent_color):
     Gtk.StyleContext.remove_provider_for_display(Gdk.Display.get_default(), css_provider)
@@ -46,28 +106,48 @@ def add_css_provider(css, accent_color):
         Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
     )
 
-def parse_gtk_theme(colors, gnome_shell_css, theme_file, gtk3_file, modify_gtk3_theme, modify_gnome_shell, app_settings, reset_func):
-    if(app_settings.get_boolean("window")):
+def parse_gtk_theme(colors, gnome_shell_css, theme_file, gtk3_file, reset_func):
+    prefs = Preferences()
+    all_prefs = prefs.get_all()
+
+    if(all_prefs["window"]):
         colors["border_color"] = colors["accent_color"]
     else:
         colors["border_color"] = 'transparent'
 
     colors["overview_bg_color"] = colors["window_bg_color"] # overview_bg_color must be opaque
-    if(app_settings.get_boolean("transparency")):
+    if(all_prefs["transparency"]):
         for color_to_replace in ["window_bg_color", "headerbar_bg_color", "card_bg_color"]:
             rgb = hex_to_rgb(colors[color_to_replace])
             colors[color_to_replace] = f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.82)"
-        gtk3_file += ".background:not(.nautilus-desktop) { opacity: 0.95; }"
+        gtk3_file += ".background:not(.nautilus-desktop):not(.desktopwindow) { opacity: 0.95; }"
+
+    if(all_prefs["light-text"]):
+        colors["search_fg_color"] = "white"
+    else:
+        colors["search_fg_color"] = colors["window_fg_color"]
 
     # Panel colors
     colors["panel_bg_color"] = colors["window_bg_color"]
     colors["panel_fg_color"] = colors["window_fg_color"]
     colors["panel_button_bg_color"] = "transparent"
     colors["panel_hover_bg_color"] = colors["card_bg_color"]
+    rgb = hex_to_rgb(colors["accent_color"])
+    colors["accent_transparent"] = f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.5)"
 
-    items_to_replace = ["window_bg_color", "window_fg_color", "card_bg_color", "headerbar_bg_color", "accent_color", "border_color", "red_1", "panel_bg_color", "panel_fg_color", "panel_button_bg_color", "panel_hover_bg_color", "overview_bg_color"]
+    if(all_prefs["firefox-theme"]):
+        firefox_theme_plugin.variables = colors
+        firefox_theme_plugin.window_controls = all_prefs["window-controls"]
+        firefox_theme_plugin.apply()
+    else:
+        firefox_theme_plugin.reset()
 
-    if(modify_gtk3_theme):
+    items_to_replace = ["window_bg_color", "window_fg_color", "card_bg_color", "headerbar_bg_color",
+                        "accent_color", "border_color", "red_1", "panel_bg_color", "panel_fg_color",
+                        "panel_button_bg_color", "panel_hover_bg_color", "overview_bg_color", "search_fg_color",
+                        "accent_transparent"]
+
+    if(all_prefs["modify-gtk3-theme"]):
         for color in colors.keys():
             gtk3_file = gtk3_file.replace(f"@{color}", colors[color])
 
@@ -75,7 +155,7 @@ def parse_gtk_theme(colors, gnome_shell_css, theme_file, gtk3_file, modify_gtk3_
         with open(gtk3_theme_file, "w") as file:
             file.write(gtk3_file)
 
-    if(modify_gnome_shell and GLib.getenv("XDG_CURRENT_DESKTOP") == "GNOME"):
+    if(all_prefs["modify-gnome-shell"] and "GNOME" in GLib.getenv("XDG_CURRENT_DESKTOP")):
         for item in items_to_replace:
             gnome_shell_css = gnome_shell_css.replace(f"@{item}", colors[item])
 
@@ -83,8 +163,8 @@ def parse_gtk_theme(colors, gnome_shell_css, theme_file, gtk3_file, modify_gtk3_
         os.makedirs(gnome_shell_theme_dir, exist_ok=True)
         file = shutil.copyfile(theme_file, os.path.join(gnome_shell_theme_dir, "gnome-shell.css"))
 
-        if(app_settings.get_boolean("sharp")):
-            gnome_shell_css += f"\n\n{sharp_corners_css}"
+        if(all_prefs["sharp"]):
+            gnome_shell_css += f"\n\n* {{border-radius: 0px;}}"
         with open(file, "w") as f:
             f.write(gnome_shell_css)
 
@@ -102,8 +182,9 @@ def set_to_default(config_dirs, theme_type, reset_func, extras):
     gtk_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"default-{theme_type}.css")
     gtk_css = open(gtk_file).read()
     add_css_provider(gtk_css + extras, f"rgb{read_accent_color()}")
+    firefox_theme_plugin.reset()
         
-    if(GLib.getenv("XDG_CURRENT_DESKTOP") == "GNOME"):
+    if("GNOME" in GLib.getenv("XDG_CURRENT_DESKTOP")):
         reset_func()
 
 def confirm_delete(dialog, response, button, window):
@@ -117,7 +198,7 @@ def confirm_delete(dialog, response, button, window):
 def delete_theme(button, window):
     dialog = Adw.AlertDialog()
     button.theme = button.theme.replace('.css', '')
-    dialog.set_heading(_("Delete ") + f"{button.theme}?")
+    dialog.set_heading(_("Delete") + f" {button.theme}?")
     dialog.set_body(_("Are you sure you want to delete that theme?\nThis cannot be undone."))
     
     dialog.add_response("cancel", _("Cancel"))
@@ -158,80 +239,8 @@ def set_gtk3_theme(gtk3_config_dir, window_control):
     dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtk3-template")
     assets = os.path.join(dir, "assets.tar.xz")
     shutil.unpack_archive(assets, extract_dir=gtk3_config_dir, format="tar")
-
-    with open(os.path.join(gtk3_config_dir, "gtk.css"), "a") as file:
-        if(window_control == "colored"):
-            file.write("""
-                button.minimize.titlebutton:not(.suggested-action):not(.destructive-action) {
-                  background: alpha(@yellow_1,0.1);
-                  color: @yellow_1;
-                }
-
-                button.minimize.titlebutton:backdrop:not(.suggested-action):not(.destructive-action) {
-                  color: shade(@yellow_1,0.5);
-                }
-
-                button.maximize.titlebutton:not(.suggested-action):not(.destructive-action) {
-                  background: alpha(@green_1,0.1);
-                  color: @green_1;
-                }
-
-                button.maximize.titlebutton:backdrop:not(.suggested-action):not(.destructive-action) {
-                  color: shade(@green_1,0.5);
-                }
-
-                button.close.titlebutton:not(.suggested-action):not(.destructive-action) {
-                  background: alpha(@red_1,0.1);
-                  color: @red_1;
-                }
-
-                button.close.titlebutton:backdrop:not(.suggested-action):not(.destructive-action) {
-                  color: shade(@red_1,0.5);
-                }
-            """)
-        elif(window_control == "macos"):
-            file.write("""
-                button.minimize.titlebutton:not(.suggested-action):not(.destructive-action) {
-                  background-color: @yellow_1;
-                  min-width: 16px;
-                  min-height: 16px;
-                  color: transparent;
-                }
-
-                button.minimize.titlebutton:active:not(.suggested-action):not(.destructive-action) {
-                  background-color: shade(@yellow_1, 0.8);
-                }
-
-                button.maximize.titlebutton:not(.suggested-action):not(.destructive-action) {
-                  background-color: @green_1;
-                  min-width: 16px;
-                  min-height: 16px;
-                  color: transparent;
-                }
-
-                button.maximize.titlebutton:active:not(.suggested-action):not(.destructive-action) {
-                  background-color: shade(@green_1, 0.8);
-                }
-
-                button.close.titlebutton:not(.suggested-action):not(.destructive-action) {
-                  background-color: @red_1;
-                  min-width: 16px;
-                  min-height: 16px;
-                  color: transparent;
-                }
-
-                button.close.titlebutton:active:not(.suggested-action):not(.destructive-action) {
-                  background-color: shade(@red_1, 0.8);
-                }
-
-                button.minimize.titlebutton:backdrop:not(.suggested-action):not(.destructive-action), button.maximize.titlebutton:backdrop:not(.suggested-action):not(.destructive-action), button.close.titlebutton:backdrop:not(.suggested-action):not(.destructive-action) {
-                  color: transparent;
-                }
-
-                button.minimize.titlebutton:backdrop:hover:not(.suggested-action):not(.destructive-action), button.minimize.titlebutton:backdrop:active:not(.suggested-action):not(.destructive-action), button.maximize.titlebutton:backdrop:hover:not(.suggested-action):not(.destructive-action), button.maximize.titlebutton:backdrop:active:not(.suggested-action):not(.destructive-action), button.close.titlebutton:backdrop:hover:not(.suggested-action):not(.destructive-action), button.close.titlebutton:backdrop:active:not(.suggested-action):not(.destructive-action),
-                button.maximize.titlebutton:hover:not(.suggested-action):not(.destructive-action), button.close.titlebutton:hover:not(.suggested-action):not(.destructive-action),
-                button.minimize.titlebutton:hover:not(.suggested-action):not(.destructive-action) {
-                  color: @window_bg_color;
-                }
-            """
-            )
+    if(window_control != "default"):
+        window_control_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "window-controls", "gtk3", window_control + ".css")
+        with open(os.path.join(gtk3_config_dir, "gtk.css"), "a") as file:
+            with open(window_control_file, "r") as css:
+                file.write(css.read())

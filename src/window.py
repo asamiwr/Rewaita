@@ -1,6 +1,6 @@
 # window.py
 #
-# Copyright 2025 Nathan Perlman
+# Copyright 2026 Nathan Perlman
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,12 +21,19 @@ import os, shutil, gi, re
 gi.require_version('Xdp', '1.0')
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Xdp
 from collections import defaultdict
-from .utils import parse_gtk_theme, set_to_default, delete_items, set_gtk3_theme, get_accent_color, add_css_provider
+from .utils import parse_gtk_theme, set_to_default, delete_items, set_gtk3_theme, get_accent_color, add_css_provider, Preferences
 from .custom_theme_page import CustomPage
 from .theme_page import ThemePage
+from .pref_page import PrefPage
 from .window_control_box import WindowControlBox
 
-if(GLib.getenv("XDG_CURRENT_DESKTOP") == "GNOME"):
+def read_color_scheme(settings):
+    try:
+        return settings.read_uint("org.freedesktop.appearance", "color-scheme")
+    except:
+        return 1
+
+if("GNOME" in GLib.getenv("XDG_CURRENT_DESKTOP")):
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     proxy = Gio.DBusProxy.new_sync(
         bus,
@@ -61,7 +68,12 @@ class RewaitaWindow(Adw.ApplicationWindow):
     delete_button = Gtk.Template.Child()
     endbox = Gtk.Template.Child()
     extra_css = set()
+
     window_control_css = ""
+    light_theme = ""
+    dark_theme = ""
+    pref = 0
+    data_dir = GLib.get_user_data_dir()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -72,9 +84,6 @@ class RewaitaWindow(Adw.ApplicationWindow):
             Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
         )
 
-        if(os.path.exists(os.path.join(GLib.get_user_data_dir(), "prefs.json"))):
-            os.remove(os.path.join(GLib.get_user_data_dir(), "prefs.json"))
-
         #Makes necessary directories
         for path in [gtk3_config_dir, gtk4_config_dir, gnome_shell_dir]:
             os.makedirs(path, exist_ok=True)
@@ -84,16 +93,15 @@ class RewaitaWindow(Adw.ApplicationWindow):
         self.add_action(delete)
 
         if(self.window_control != "default"):
-            self.window_control_css = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "window-controls", f"{self.window_control}.css")).read()
+            self.window_control_css = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "window-controls", "gtk4", f"{self.window_control}.css")).read()
         self.portal = Xdp.Portal()
         self.settings = self.portal.get_settings()
-        self.pref = self.settings.read_uint("org.freedesktop.appearance", "color-scheme")
+        self.pref = read_color_scheme(self.settings)
 
         scroll_box = Gtk.ScrolledWindow(hexpand=True)
         self.main_box.append(scroll_box)
 
         self.controls = self.endbox.get_parent().get_last_child() #Gets the window controls
-
         self.theme_page = ThemePage(self)
         self.theme_page.append(WindowControlBox(self, self.window_control))
         self.custom_page = CustomPage(self)
@@ -101,20 +109,16 @@ class RewaitaWindow(Adw.ApplicationWindow):
         stack = Adw.ViewStack(transition_duration=200, vhomogeneous=False)
         stack.connect("notify::visible-child", self.on_page_changed)
         self.switcher.set_stack(stack)
-        stack.add_titled_with_icon(self.theme_page, "settings", _("Theming"), "brush-symbolic")
+        stack.add_titled_with_icon(self.theme_page, "theming", _("Theming"), "brush-symbolic")
         stack.add_titled_with_icon(Adw.Clamp(child=self.custom_page, maximum_size=850), "custom", _("Custom"), "hammer-symbolic")
+        stack.add_titled_with_icon(Adw.Clamp(child=PrefPage(self), maximum_size=850), "pref", _("Fine Tune"), "emblem-system-symbolic")
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         box.append(stack)
         scroll_box.set_child(box)
 
-    light_theme = ""
-    dark_theme = ""
-    pref = 0
-    data_dir = GLib.get_user_data_dir()
-
     def on_page_changed(self, stack, _):
-        if(stack.get_visible_child_name() == "custom"):
+        if(stack.get_visible_child_name() != "theming"):
             self.delete_button.set_visible(False)
         else:
             self.delete_button.set_visible(True)
@@ -123,7 +127,7 @@ class RewaitaWindow(Adw.ApplicationWindow):
     gtk3_template_file_content = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtk3-template", "gtk.css")).read()
 
     def on_theme_selected(self):
-        self.pref = self.settings.read_uint("org.freedesktop.appearance", "color-scheme")
+        self.pref = read_color_scheme(self.settings)
         if(self.pref == 1):
             theme_name = self.dark_theme
             theme_type = "dark"
@@ -182,9 +186,6 @@ class RewaitaWindow(Adw.ApplicationWindow):
             self.template_file_content,
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "gnome-shell-template.css"),
             self.gtk3_template_file_content,
-            self.modify_gtk3_theme,
-            self.modify_gnome_shell,
-            self.app_settings,
             reset_shell
         )
 
@@ -193,7 +194,7 @@ class RewaitaWindow(Adw.ApplicationWindow):
 
     def on_window_control_clicked(self, button, control_file, window, flowbox):
         if(control_file != "default"):
-            self.window_control_css = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "window-controls", f"{control_file}.css")).read()
+            self.window_control_css = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "window-controls", "gtk4", f"{control_file}.css")).read()
         else:
             self.window_control_css = ""
         for control in flowbox:
@@ -233,9 +234,19 @@ class RewaitaWindow(Adw.ApplicationWindow):
         if(button.get_icon_name() != "reload-symbolic"): button.add_css_class("active-scheme")
 
     def save_prefs(self):
-        self.app_settings.set_string("light-theme", self.light_theme)
-        self.app_settings.set_string("dark-theme", self.dark_theme)
-        self.app_settings.set_string("window-controls", self.window_control)
-        self.app_settings.set_boolean("modify-gtk3-theme", self.modify_gtk3_theme)
-        self.app_settings.set_boolean("modify-gnome-shell", self.modify_gnome_shell)
-        self.app_settings.set_boolean("run-in-background", self.run_in_background)
+        values = {
+            "light-theme": self.light_theme,
+            "dark-theme": self.dark_theme,
+            "window-controls": self.window_control,
+            "modify-gtk3-theme": self.modify_gtk3_theme,
+            "modify-gnome-shell": self.modify_gnome_shell,
+            "run-in-background": self.run_in_background,
+            "transparency": self.transparency,
+            "window": self.borders,
+            "sharp": self.sharp,
+            "firefox-theme": self.firefox_theme,
+            "light-text": self.light_text
+        }
+
+        prefs = Preferences()
+        prefs.save(values)

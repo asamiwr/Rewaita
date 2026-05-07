@@ -1,6 +1,6 @@
 # main.py
 #
-# Copyright 2025 Nathan Perlman
+# Copyright 2026 Nathan Perlman
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,8 +24,8 @@ gi.require_version('Adw', '1')
 gi.require_version('Xdp', '1.0')
 
 from gi.repository import Gtk, Gdk, Gio, Adw, GLib, Xdp, GObject
+from .utils import Preferences
 from .window import RewaitaWindow
-from .pref_dialog import PrefDialog
 
 class RewaitaApplication(Adw.Application):
     def __init__(self):
@@ -34,7 +34,6 @@ class RewaitaApplication(Adw.Application):
                          resource_base_path='/io/github/swordpuffin/rewaita')
         self.create_action('quit', lambda *_: self.quit(), ['<primary>q'])
         self.create_action('about', self.on_about_action)
-        self.create_action('pref', self.on_pref_clicked)
         self.create_action('guide', self.on_guide_clicked)
 
         self.add_main_option(
@@ -50,17 +49,24 @@ class RewaitaApplication(Adw.Application):
 
     def grab_prefs(self):
         win = RewaitaWindow
-        win.app_settings = Gio.Settings.new("io.github.swordpuffin.rewaita")
+        prefs = Preferences()
+        all_prefs = prefs.get_all()
 
-        win.light_theme = win.app_settings.get_string("light-theme")
-        win.dark_theme = win.app_settings.get_string("dark-theme")
-        win.window_control = win.app_settings.get_string("window-controls")
-        win.modify_gtk3_theme = win.app_settings.get_boolean("modify-gtk3-theme")
-        win.modify_gnome_shell = win.app_settings.get_boolean("modify-gnome-shell")
-        win.run_in_background = win.app_settings.get_boolean("run-in-background")
-        win.transparency = win.app_settings.get_boolean("transparency")
-        win.borders = win.app_settings.get_boolean("window")
-        win.sharp = win.app_settings.get_boolean("sharp")
+        try:
+            win.light_theme = all_prefs["light-theme"]
+            win.dark_theme = all_prefs["dark-theme"]
+            win.window_control = all_prefs["window-controls"]
+            win.modify_gtk3_theme = all_prefs["modify-gtk3-theme"]
+            win.modify_gnome_shell = all_prefs["modify-gnome-shell"]
+            win.run_in_background = all_prefs["run-in-background"]
+            win.transparency = all_prefs["transparency"]
+            win.borders = all_prefs["window"]
+            win.sharp = all_prefs["sharp"]
+            win.firefox_theme = all_prefs["firefox-theme"]
+            win.light_text = all_prefs["light-text"]
+        except:
+            prefs.make_file()
+            self.grab_prefs()
 
     def on_close_request(self, window, *args):
         if(window.run_in_background):
@@ -91,19 +97,13 @@ class RewaitaApplication(Adw.Application):
         if(namespace == "org.freedesktop.appearance" and key == "color-scheme" or namespace == "org.gnome.desktop.interface" and key == "accent-color"):
             win.on_theme_selected()
 
-    def on_pref_clicked(self, action, _):
-        win = self.props.active_window
-        if not win:
-            win = RewaitaWindow(application=self)
-        dialog = PrefDialog(win)
-        dialog.present(win)
-
     def on_guide_clicked(self, action, _):
         builder = Gtk.Builder().new_from_resource('/io/github/swordpuffin/rewaita/widgets/guide_dialog.ui')
         guide_dialog = builder.get_object("GuideDialog")
         guide_dialog.present(parent=self.props.active_window)
         gtk3_entry = builder.get_object("gtk3_entry")
         gtk4_entry = builder.get_object("gtk4_entry")
+        firefox_entry = builder.get_object("firefox_entry")
         self.clipboard = Gdk.Display.get_default().get_clipboard()
 
         def on_copy(button, entry):
@@ -124,13 +124,17 @@ class RewaitaApplication(Adw.Application):
             print("Background permission granted")
             path = os.path.join(GLib.getenv("HOME"), ".config", "autostart")
             os.makedirs(path, exist_ok=True)
+            if(portal.running_under_flatpak()):
+                command = "flatpak run io.github.swordpuffin.rewaita --background"
+            else:
+                command = "rewaita -b"
             with open(os.path.join(path, "rewaita.desktop"), "w") as file:
-                file.write("""
+                file.write(f"""
 [Desktop Entry]
 Type=Application
 Name=io.github.swordpuffin.rewaita
 X-XDP-Autostart=io.github.swordpuffin.rewaita
-Exec=flatpak run io.github.swordpuffin.rewaita --background
+Exec={command}
 DBusActivatable=true
 X-Flatpak=io.github.swordpuffin.rewaita
                 """
@@ -152,9 +156,9 @@ X-Flatpak=io.github.swordpuffin.rewaita
         about = Adw.AboutDialog(application_name='Rewaita',
                                 application_icon='io.github.swordpuffin.rewaita',
                                 developer_name='Nathan Perlman',
-                                version='1.1.1',
+                                version='1.1.3',
                                 developers=['Nathan Perlman'],
-                                copyright='© 2025 Nathan Perlman')
+                                copyright='© 2026 Nathan Perlman')
         # Translators: Replace "translator-credits" with your name/username, and optionally an email or URL.
         about.set_translator_credits(_('translator-credits'))
         about.present(self.props.active_window)
